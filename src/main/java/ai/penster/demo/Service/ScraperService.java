@@ -19,28 +19,22 @@ public class ScraperService {
     }
 
     public void scrapeAllPlatforms(String title, String location) {
-        // Inside scrapeAllPlatforms
-BrowserContext context = browser.newContext(new Browser.NewContextOptions()
-    .setUserAgent(REAL_UA)
-    .setViewportSize(1920, 1080)
-    .setDeviceScaleFactor(1)
-    .setHasTouch(false)
-    .setLanguages(java.util.List.of("en-US", "en"))); 
-
-// CRITICAL: Execute a script to hide the 'webdriver' flag
-context.addInitScript("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})");
+        
         System.out.println("Starting Scraper...");
         jobRepository.deleteAll();
 
         // 1. Initialize Playwright with Arch-friendly settings
         try (Playwright playwright = Playwright.create()) {
+            // Declare browser here (fixes "cannot find symbol browser")
             Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions()
                     .setHeadless(false) 
                     .setSlowMo(100)); // Crucial for bypassing detection on fallback builds
 
+            // Create context (fixes setLanguages → setLocale)
             BrowserContext context = browser.newContext(new Browser.NewContextOptions()
                     .setUserAgent(REAL_UA)
-                    .setViewportSize(1920, 1080));
+                    .setViewportSize(1920, 1080)
+                    .setLocale("en-US"));  // Correct API: setLocale(String), not setLanguages(List)
 
             // 2. Execute platform-specific scrapes
             scrapeDice(context, title, location, 20);
@@ -51,45 +45,50 @@ context.addInitScript("Object.defineProperty(navigator, 'webdriver', {get: () =>
         }
     }
 
-private void scrapeDice(BrowserContext context, String title, String location, int targetCount) {
-    Page page = context.newPage();
-    try {
-        System.out.println("Navigating to Dice...");
-        page.navigate("https://www.dice.com/jobs");
-
-        // --- THE SECURITY CHECK ---
-        // If the search bar isn't visible within 5 seconds, 
-        // it's almost certainly a security challenge.
+    private void scrapeDice(BrowserContext context, String title, String location, int targetCount) {
+        Page page = context.newPage();
         try {
-            page.waitForSelector("input#typeaheadInput", new Page.WaitForSelectorOptions().setTimeout(5000));
+            System.out.println("Navigating to Dice...");
+            page.navigate("https://www.dice.com/jobs");
+
+            // --- THE SECURITY CHECK ---
+            // If the search bar isn't visible within 5 seconds, 
+            // it's almost certainly a security challenge.
+            try {
+                page.waitForSelector("input#typeaheadInput", new Page.WaitForSelectorOptions().setTimeout(5000));
+            } catch (Exception e) {
+                System.out.println("⚠️ ACTION REQUIRED: Solving security challenge in the browser window...");
+                // Now wait 60 seconds to give YOU time to click the 'I am human' box
+                page.waitForSelector("input#typeaheadInput", new Page.WaitForSelectorOptions().setTimeout(60000));
+                System.out.println("✅ Challenge bypassed! Continuing scrape...");
+            }
+            // ---------------------------
+
+            System.out.println("Filling search criteria for: " + title);
+            page.fill("input#typeaheadInput", title);
+            
+            // Use type for the location to be "stealthier"
+            page.locator("input#google-location-search").focus();
+            page.keyboard().type(location);
+            page.keyboard().press("Enter");
+
+            // Wait for results to load
+            page.waitForSelector("dhi-search-card", new Page.WaitForSelectorOptions().setTimeout(30000));
+
+            // TODO: Add extraction loop here, e.g.:
+            // Locator cards = page.locator("dhi-search-card");
+            // for (int i = 0; i < Math.min(targetCount, cards.count()); i++) {
+            //     extractAndSaveJob(cards.nth(i));
+            // }
+
         } catch (Exception e) {
-            System.out.println("⚠️ ACTION REQUIRED: Solving security challenge in the browser window...");
-            // Now wait 60 seconds to give YOU time to click the 'I am human' box
-            page.waitForSelector("input#typeaheadInput", new Page.WaitForSelectorOptions().setTimeout(60000));
-            System.out.println("✅ Challenge bypassed! Continuing scrape...");
+            System.err.println("Dice Scrape failed: " + e.getMessage());
+            page.screenshot(new Page.ScreenshotOptions().setPath(Paths.get("dice-debug.png")));
+        } finally {
+            page.close();
         }
-        // ---------------------------
-
-        System.out.println("Filling search criteria for: " + title);
-        page.fill("input#typeaheadInput", title);
-        
-        // Use type for the location to be "stealthier"
-        page.locator("input#google-location-search").focus();
-        page.keyboard().type(location);
-        page.keyboard().press("Enter");
-
-        // Wait for results to load
-        page.waitForSelector("dhi-search-card", new Page.WaitForSelectorOptions().setTimeout(30000));
-
-        // ... extraction logic ...
-
-    } catch (Exception e) {
-        System.err.println("Dice Scrape failed: " + e.getMessage());
-        page.screenshot(new Page.ScreenshotOptions().setPath(Paths.get("dice-debug.png")));
-    } finally {
-        page.close();
     }
-}
+
     private void extractAndSaveJob(Locator card) {
         try {
             Job job = new Job();
