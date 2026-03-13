@@ -1,14 +1,11 @@
-package ai.pentester.demo;
+package ai.penster.demo;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
 public class DemoApplication {
-
-	public static void main(String[] args) {
-		SpringApplication.run(DemoApplication.class, args);
-		System.out.println("check out this shit");
-	}
-
+    public static void main(String[] args) { // This is likely line 9
+        SpringApplication.run(DemoApplication.class, args);
+    }
 }
